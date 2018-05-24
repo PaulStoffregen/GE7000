@@ -15,8 +15,10 @@ Support Contact: support.ele@noritake.com
 #define GE7000_SERIAL_ASYNC_H
 
 #include <Noritake_VFD_GE7000.h>
+#ifdef __AVR__
 #include <avr/pgmspace.h>
 #include <util/delay_basic.h>
+#endif
 
 //template <unsigned NORITAKE_VFD_BAUD>
 class GE7000_Serial_Async : public GE7000_Interface{
@@ -29,7 +31,23 @@ private:
 	uint16_t _tx_delay;
 	// private static method for timing
 	static inline void tunedDelay(uint16_t delay){ 
+#if defined(__AVR__)
 		_delay_loop_2(delay);
+#elif defined(__arm__)
+#if 1
+		//uint32_t n = (delay * (905 * (F_CPU / 1000000))) >> 16;
+		uint32_t n = delay;
+		asm volatile(
+		"L_%=_tunedDelay:"		"\n\t"
+		#ifdef KINETISL
+		"sub    %0, #1"			"\n\t"
+		#else
+		"subs   %0, #1"			"\n\t"
+		#endif
+		"bne    L_%=_tunedDelay"	"\n"
+		: "+r" (n) : );
+#endif
+#endif
 	}
 	//Helper method to aid in delay calculations.
 	uint16_t subtract_cap(uint16_t num, uint16_t sub) {
@@ -63,9 +81,13 @@ public:
 		_transmitPortRegister = portOutputRegister(port);
 		
 		//Updated Calculations from Arduino SofwareSerial
+#if defined(__AVR__)
 		uint16_t bit_delay = (F_CPU / baudRate) / 4;
 		_tx_delay = subtract_cap(bit_delay, 15 / 4);
-
+#elif defined(__arm__)
+		uint16_t bit_delay = ((F_CPU / baudRate) * 21813) >> 16;
+		_tx_delay = subtract_cap(bit_delay, 3);
+#endif
 		if(digitalPinToPCICR(out)){
 			#if GCC_VERSION > 40800
 				_rx_delay_centering = subtract_cap(bit_delay / 2, (4 + 4 + 75 + 17 - 23) / 4);
